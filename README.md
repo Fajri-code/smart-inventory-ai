@@ -146,9 +146,7 @@ Terkirim
 
 | Nama | Peran |
 |------|-------|
-| [Nama 1] | Full Stack Developer |
-| [Nama 2] | UI/UX Designer |
-| [Nama 3] | Database & Backend |
+| Refi Fajriyani | Full Stack Developer, UI/UX Designer, Database & Backend |
 
 ---
 
