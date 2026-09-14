@@ -16,6 +16,12 @@ if(isset($_GET['id']) && isset($_GET['status'])) {
 
     if(!$data) { die("[DEBUG] Data tidak ditemukan. ID: " . htmlspecialchars($id)); }
 
+    // Cegah double approve
+    if($data['status'] !== 'menunggu') {
+        echo "<script>alert('Data ini sudah diproses sebelumnya!'); window.location.href='barang_masuk.php';</script>";
+        exit;
+    }
+
     // Update status barang_masuk
     $upd = mysqli_query($conn, "UPDATE barang_masuk SET status='$status' WHERE no_penerimaan='$id'");
     if(!$upd) { die("[DEBUG] Gagal update status: " . mysqli_error($conn)); }
@@ -29,14 +35,33 @@ if(isset($_GET['id']) && isset($_GET['status'])) {
 
         $sku_val = ($sku !== '') ? "'$sku'" : 'NULL';
         $lokasi  = mysqli_real_escape_string($conn, $data['lokasi'] ?? '');
-        $q = mysqli_query($conn, "
-            INSERT INTO barang (nama, sku, jumlah, jumlah_baik, jumlah_reject, status, lokasi)
-            VALUES ('$nama', $sku_val, $jumlah_bagus, $jumlah_bagus, $reject, 'Available', '$lokasi')
-        ");
+        
+        // Cek apakah barang sudah ada di inventaris (berdasarkan SKU, atau nama jika SKU kosong)
+        if ($sku !== '') {
+            $cek_barang = mysqli_query($conn, "SELECT id, jumlah FROM barang WHERE sku='$sku'");
+        } else {
+            $cek_barang = mysqli_query($conn, "SELECT id, jumlah FROM barang WHERE nama='$nama'");
+        }
+
+        if (mysqli_num_rows($cek_barang) > 0) {
+            $row_barang = mysqli_fetch_assoc($cek_barang);
+            $id_barang = $row_barang['id'];
+            $new_jumlah = $row_barang['jumlah'] + $jumlah_bagus;
+            $new_status = $new_jumlah <= 0 ? 'Habis' : ($new_jumlah <= 5 ? 'On Hold' : 'Available');
+            
+            $q = mysqli_query($conn, "UPDATE barang SET jumlah = $new_jumlah, jumlah_baik = jumlah_baik + $jumlah_bagus, jumlah_reject = jumlah_reject + $reject, status = '$new_status' WHERE id = $id_barang");
+        } else {
+            $status_awal = $jumlah_bagus <= 0 ? 'Habis' : ($jumlah_bagus <= 5 ? 'On Hold' : 'Available');
+            $q = mysqli_query($conn, "
+                INSERT INTO barang (nama, sku, jumlah, jumlah_baik, jumlah_reject, status, lokasi)
+                VALUES ('$nama', $sku_val, $jumlah_bagus, $jumlah_bagus, $reject, '$status_awal', '$lokasi')
+            ");
+        }
+
         if($reject > 0) {
             $conn->query("INSERT INTO barang_reject (nama_barang, sku, jumlah, sumber, alasan) VALUES ('$nama', $sku_val, $reject, 'barang_masuk', 'Reject saat penerimaan')");
         }
-        if(!$q) { die("[DEBUG] Gagal INSERT: " . mysqli_error($conn)); }
+        if(!$q) { die("[DEBUG] Gagal simpan ke inventaris: " . mysqli_error($conn)); }
 
     } elseif($status === 'ditolak') {
         $nama    = mysqli_real_escape_string($conn, $data['nama_barang']);
@@ -101,66 +126,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 <div class="wrapper">
 
     <!-- SIDEBAR -->
-    <aside class="sidebar">
-        <div class="brand">
-            <div class="brand-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-            </div>
-            <div>
-                <span class="brand-name">SMARTINVENTORY</span>
-                <p class="brand-sub">Operasi Manufaktur</p>
-            </div>
-        </div>
-
-        <div class="nav-section-label">MENU UTAMA</div>
-        <ul class="nav-list">
-            <li class="nav-item">
-                <a href="index.php">
-                    <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>
-                    Dasbor
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="inventaris.php">
-                    <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg></span>
-                    Inventaris
-                </a>
-            </li>
-            <li class="nav-item active">
-                <a href="barang_masuk.php">
-                    <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"/></svg></span>
-                    Barang Masuk
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="barang_keluar.php">
-                    <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 17 20 13 16 9"/><line x1="20" y1="13" x2="4" y2="13"/><path d="M4 6H2m2 6H2m2 6H2"/></svg></span>
-                    Barang Keluar
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="barang_reject.php">
-                    <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span>
-                    Barang Reject
-                </a>
-            </li>
-        </ul>
-
-        <div class="sidebar-bottom">
-            <div class="ai-card">
-                <div class="ai-card-header">
-                    <div class="ai-pulse"></div>
-                    <span>Asisten AI Aktif</span>
-                </div>
-                <p class="ai-card-desc">AI mendeteksi <strong>3 optimasi</strong> inventaris</p>
-                <a href="#" class="ai-card-btn">Lihat Saran &rarr;</a>
-            </div>
-            <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#f87171;text-decoration:none;font-size:13.5px;font-weight:600;margin-top:12px;transition:background 0.15s;" onmouseover="this.style.background='rgba(248,113,113,0.1)'" onmouseout="this.style.background='transparent'">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                Logout
-            </a>
-        </div>
-    </aside>
+<?php include 'includes/sidebar.php'; ?>
 
     <!-- TOPBAR -->
     <header class="topbar" style="display:none;"></header>

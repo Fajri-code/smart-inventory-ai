@@ -11,7 +11,7 @@ $toastType = '';
 if(isset($_POST['edit_stok'])){
     $id     = intval($_POST['id']);
     $jumlah = $_POST['jumlah_baru'];
-    $lokasi = mysqli_real_escape_string($conn, $_POST['lokasi_baru'] ?? '');
+    $lokasi = trim($_POST['lokasi_baru'] ?? '');
 
     if($jumlah === '' || !is_numeric($jumlah) || intval($jumlah) < 0){
         $toast     = "Input tidak valid.\nPeriksa kembali jumlah yang dimasukkan.";
@@ -19,7 +19,11 @@ if(isset($_POST['edit_stok'])){
     } else {
         $jumlah = intval($jumlah);
         $status_baru = $jumlah <= 0 ? 'Habis' : ($jumlah <= 5 ? 'On Hold' : 'Available');
-        $conn->query("UPDATE barang SET jumlah = $jumlah, status = '$status_baru', lokasi = '$lokasi' WHERE id = $id");
+        
+        $stmt = $conn->prepare("UPDATE barang SET jumlah = ?, jumlah_baik = ?, status = ?, lokasi = ? WHERE id = ?");
+        $stmt->bind_param("iissi", $jumlah, $jumlah, $status_baru, $lokasi, $id);
+        $stmt->execute();
+        
         $toast     = "Stok dan lokasi berhasil diperbarui.";
         $toastType = 'success';
     }
@@ -35,16 +39,21 @@ if(isset($_POST['tambah_stok'])){
         $toastType = 'error';
     } else {
         $tambah = intval($tambah);
-        $conn->query("
+        
+        $stmt = $conn->prepare("
             UPDATE barang 
-            SET jumlah = jumlah + $tambah,
+            SET jumlah = jumlah + ?,
+                jumlah_baik = jumlah_baik + ?,
                 status = CASE 
-                    WHEN jumlah + $tambah <= 0 THEN 'Habis'
-                    WHEN jumlah + $tambah <= 5 THEN 'On Hold'
+                    WHEN jumlah + ? <= 0 THEN 'Habis'
+                    WHEN jumlah + ? <= 5 THEN 'On Hold'
                     ELSE 'Available'
                 END
-            WHERE id = $id
+            WHERE id = ?
         ");
+        $stmt->bind_param("iiiii", $tambah, $tambah, $tambah, $tambah, $id);
+        $stmt->execute();
+        
         $toast     = "Stok berhasil ditambahkan.\nData inventaris telah diperbarui.";
         $toastType = 'success';
     }
@@ -60,7 +69,11 @@ if(isset($_POST['reject_barang'])){
         $toastType = 'error';
     } else {
         $jumlah_reject = intval($jumlah_reject);
-        $barang        = $conn->query("SELECT jumlah, nama FROM barang WHERE id=$id")->fetch_assoc();
+        
+        $stmt_cek = $conn->prepare("SELECT jumlah, nama, sku FROM barang WHERE id=?");
+        $stmt_cek->bind_param("i", $id);
+        $stmt_cek->execute();
+        $barang = $stmt_cek->get_result()->fetch_assoc();
 
         if($jumlah_reject > $barang['jumlah']){
             $toast     = "Jumlah reject melebihi stok tersedia.\nSilakan masukkan angka yang benar.";
@@ -68,12 +81,21 @@ if(isset($_POST['reject_barang'])){
         } else {
             $sisa = $barang['jumlah'] - $jumlah_reject;
             $status_baru = $sisa <= 0 ? 'Habis' : ($sisa <= 5 ? 'On Hold' : 'Available');
-            $conn->query("UPDATE barang SET jumlah = $sisa, jumlah_reject = jumlah_reject + $jumlah_reject, status = '$status_baru' WHERE id=$id");
+            
+            $stmt_upd = $conn->prepare("UPDATE barang SET jumlah = ?, jumlah_baik = ?, jumlah_reject = jumlah_reject + ?, status = ? WHERE id=?");
+            $stmt_upd->bind_param("iiisi", $sisa, $sisa, $jumlah_reject, $status_baru, $id);
+            $stmt_upd->execute();
+            
             // Catat ke barang_reject
-            $nama_esc  = mysqli_real_escape_string($conn, $barang['nama']);
-            $sku_esc   = mysqli_real_escape_string($conn, $barang['sku'] ?? '');
-            $alasan    = mysqli_real_escape_string($conn, $_POST['alasan_reject'] ?? 'Rusak di gudang');
-            $conn->query("INSERT INTO barang_reject (nama_barang, sku, jumlah, sumber, alasan) VALUES ('$nama_esc','$sku_esc',$jumlah_reject,'inventaris','$alasan')");
+            $nama      = $barang['nama'];
+            $sku       = $barang['sku'] ?? '';
+            $alasan    = trim($_POST['alasan_reject'] ?? 'Rusak di gudang');
+            $sumber    = 'inventaris';
+            
+            $stmt_rej = $conn->prepare("INSERT INTO barang_reject (nama_barang, sku, jumlah, sumber, alasan) VALUES (?, ?, ?, ?, ?)");
+            $stmt_rej->bind_param("ssiss", $nama, $sku, $jumlah_reject, $sumber, $alasan);
+            $stmt_rej->execute();
+            
             $toast     = "$jumlah_reject unit ditandai rusak.\nStok dikurangi dari inventaris.";
             $toastType = 'reject';
         }
@@ -83,7 +105,10 @@ if(isset($_POST['reject_barang'])){
 // ================= ON HOLD =================
 if(isset($_POST['onhold_barang'])){
     $id = intval($_POST['id']);
-    $conn->query("UPDATE barang SET status = 'On Hold' WHERE id=$id");
+    $stmt = $conn->prepare("UPDATE barang SET status = 'On Hold' WHERE id=?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    
     $toast     = "Barang dipindahkan ke status On Hold.";
     $toastType = 'success';
 }
@@ -91,7 +116,10 @@ if(isset($_POST['onhold_barang'])){
 // ================= HAPUS =================
 if(isset($_GET['hapus'])){
     $id = intval($_GET['hapus']);
-    $conn->query("DELETE FROM barang WHERE id=$id");
+    $stmt = $conn->prepare("DELETE FROM barang WHERE id=?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    
     header("Location: inventaris.php");
     exit;
 }
@@ -113,94 +141,7 @@ if(isset($_GET['hapus'])){
 <div class="wrapper">
 
     <!-- SIDEBAR -->
-    <aside class="sidebar">
-        <div class="brand">
-            <div class="brand-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
-                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-                    <line x1="12" y1="22.08" x2="12" y2="12"/>
-                </svg>
-            </div>
-            <div>
-                <span class="brand-name">SMARTINVENTORY</span>
-                <p class="brand-sub">Operasi Manufaktur</p>
-            </div>
-        </div>
-
-        <div class="nav-section-label">MENU UTAMA</div>
-        <ul class="nav-list">
-            <li class="nav-item">
-                <a href="index.php">
-                    <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-                            <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
-                        </svg>
-                    </span>
-                    Dasbor
-                </a>
-            </li>
-            <li class="nav-item active">
-                <a href="inventaris.php">
-                    <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
-                        </svg>
-                    </span>
-                    Inventaris
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="barang_masuk.php">
-                    <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/>
-                            <path d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.29"/>
-                        </svg>
-                    </span>
-                    Barang Masuk
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="barang_keluar.php">
-                    <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="16 17 20 13 16 9"/><line x1="20" y1="13" x2="4" y2="13"/>
-                            <path d="M4 6H2m2 6H2m2 6H2"/>
-                        </svg>
-                    </span>
-                    Barang Keluar
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="barang_reject.php">
-                    <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
-                        </svg>
-                    </span>
-                    Barang Reject
-                </a>
-            </li>
-           
-        </ul>
-
-        <div class="sidebar-bottom">
-            <div class="ai-card">
-                <div class="ai-card-header">
-                    <div class="ai-pulse"></div>
-                    <span>Asisten AI Aktif</span>
-                </div>
-                <p class="ai-card-desc">Terdeteksi <strong>3 peluang optimasi</strong> inventaris Anda</p>
-                <a href="#" class="ai-card-btn">Lihat Saran &rarr;</a>
-            </div>
-            <a href="logout.php" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#f87171;text-decoration:none;font-size:13.5px;font-weight:600;margin-top:12px;transition:background 0.15s;" onmouseover="this.style.background='rgba(248,113,113,0.1)'" onmouseout="this.style.background='transparent'">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                Logout
-            </a>
-        </div>
-    </aside>
+    <?php include 'includes/sidebar.php'; ?>
 
     <!-- CONTENT -->
     <div class="content">

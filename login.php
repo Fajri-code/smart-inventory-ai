@@ -8,12 +8,34 @@ if(isset($_POST['login'])){
     $u = $_POST['username'];
     $p = $_POST['password'];
 
-    $cek = $conn->query("SELECT * FROM user WHERE username='$u' AND password='$p'");
+    // Keamanan: Gunakan Prepared Statement untuk mencegah SQL Injection
+    $stmt = $conn->prepare("SELECT id, username, password FROM user WHERE username = ?");
+    $stmt->bind_param("s", $u);
+    $stmt->execute();
+    $result = $stmt->get_result();
 
-    if($cek->num_rows > 0){
-        $_SESSION['login'] = true;
-        header("Location: index.php");
-        exit;
+    if($result->num_rows > 0){
+        $user = $result->fetch_assoc();
+        
+        // Auto-migrate: Jika password di DB masih plaintext (dari versi lama)
+        if ($user['password'] === $p) {
+            $hashed = password_hash($p, PASSWORD_DEFAULT);
+            $upd = $conn->prepare("UPDATE user SET password = ? WHERE id = ?");
+            $upd->bind_param("si", $hashed, $user['id']);
+            $upd->execute();
+            
+            $_SESSION['login'] = true;
+            header("Location: index.php");
+            exit;
+        } 
+        // Keamanan: Verifikasi password yang sudah di-hash
+        else if (password_verify($p, $user['password'])) {
+            $_SESSION['login'] = true;
+            header("Location: index.php");
+            exit;
+        } else {
+            $error = "Username atau password salah.";
+        }
     } else {
         $error = "Username atau password salah.";
     }

@@ -5,8 +5,8 @@ $nama = $_POST['nama'];
 $jumlah = $_POST['jumlah'];
 $status = $_POST['status'];
 
-$conn->query("INSERT INTO barang (nama, jumlah, status) 
-VALUES ('$nama', '$jumlah', '$status')");
-header("Location: barang.php");
+$conn->query("INSERT INTO barang (nama, jumlah, jumlah_baik, status) 
+VALUES ('$nama', '$jumlah', '$jumlah', '$status')");
+header("Location: inventaris.php");
 
 ?>  

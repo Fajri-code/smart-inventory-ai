@@ -24,7 +24,7 @@ include __DIR__ . '/config/koneksi.php';
     <div class="sidebar">
         <h3>📦 Inventory AI</h3>
         <a href="index.php">🏠 Dashboard</a>
-        <a href="barang.php">📋 Data Barang</a>
+        <a href="inventaris.php">📋 Data Barang</a>
         <a href="tambah_barang.php">➕ Tambah Barang</a>
         <a href="logout.php">🚪 Logout</a>
     </div>
